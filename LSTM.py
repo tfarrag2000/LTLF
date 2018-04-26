@@ -6,10 +6,10 @@ from pandas import DataFrame
 from pandas import concat
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
-import keras
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from keras.layers import LSTM, GRU
+from keras.callbacks import EarlyStopping
 from pandas import ExcelWriter
 import uuid
 import numpy as np
@@ -17,6 +17,9 @@ import os
 
 os.environ["PATH"] += os.pathsep + r'C:/Program Files (x86)/Graphviz2.38/bin/'
 from keras.utils import plot_model
+
+# experiment parameters
+parameters = dict()
 
 
 # convert series to supervised learning
@@ -44,16 +47,16 @@ def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):
     return agg
 
 
-def removing_seasonal_data(data, columnname, dropnan=True):
-    from stldecompose import decompose
-    # https://stackoverflow.com/questions/20672236/time-series-decomposition-function-in-python
-    stl = decompose(data[columnname])
-    stlplot = stl.plot()
-    # save to file
-    stlplot.savefig("stl_seasonal_1.png")
-    data[columnname] = stl.resid
-    data.dropna(inplace=dropnan)
-    return data
+# def removing_seasonal_data(data, columnname, dropnan=True):
+#     from stldecompose import decompose
+#     # https://stackoverflow.com/questions/20672236/time-series-decomposition-function-in-python
+#     stl = decompose(data[columnname])
+#     stlplot = stl.plot()
+#     # save to file
+#     stlplot.savefig("stl_seasonal_1.png")
+#     data[columnname] = stl.resid
+#     data.dropna(inplace=dropnan)
+#     return data
 
 
 def mean_absolute_percentage_error(y_true, y_pred):
@@ -61,7 +64,7 @@ def mean_absolute_percentage_error(y_true, y_pred):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
 
-def load_prepare_data(n_days):
+def load_prepare_data():
     # load dataset
     dataset = read_csv('load.csv', header=0, index_col=0, parse_dates=True)
     # dataset = removing_seasonal_data(dataset, 'MaxLoad')
@@ -73,34 +76,34 @@ def load_prepare_data(n_days):
     scaler = MinMaxScaler(feature_range=(-1, 1))
     scaled = scaler.fit_transform(values)
     # frame as supervised learning
-    reframed = series_to_supervised(scaled, n_days, 1, dropnan=True)
+    reframed = series_to_supervised(scaled, parameters["n_days"], 1, dropnan=True)
 
     return reframed, scaler
 
 
-def plotting_save_experiment_data(ID, model, history, y_actual, y_predicted):
+def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     print(model.summary())
-    print(list(zip(y_actual, y_predicted))[0:10])
-
     # save data
-    writer = ExcelWriter('experimentOutput\\' + ID + 'results.xlsx')
+    writer = ExcelWriter('experimentOutput\\' + parameters["ID"] + 'results.xlsx')
+    df = DataFrame.from_dict(parameters, orient='index')
+    df.to_excel(writer, 'parameters')
     df = DataFrame(list(zip(y_actual, y_predicted)), columns=['y_actual', 'y_predicted'])
-    df.to_excel(writer, 'sheet1')
-    # writer.save()
+    df.to_excel(writer, 'predicted')
     df = DataFrame(list(zip(history.history['loss'], history.history['val_loss'])), columns=['loss', 'val_loss'])
-    df.to_excel(writer, 'sheet2')
+    df.to_excel(writer, 'loss_history')
     writer.save()
     writer.close()
 
     # plot history
-    plot_model(model, to_file='experimentOutput\\' + ID + 'model_fig.png', show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file='experimentOutput\\' + parameters["ID"] + 'model_fig.png', show_shapes=True,
+               show_layer_names=True)
 
     # plot history loss
     pyplot.close()
     pyplot.plot(history.history['loss'], label='train')
     pyplot.plot(history.history['val_loss'], label='test')
     pyplot.legend()
-    pyplot.savefig('experimentOutput\\' + ID + "loss_fig.png")
+    pyplot.savefig('experimentOutput\\' + parameters["ID"] + "loss_fig.png")
     pyplot.close()
 
     # calculate RMSE
@@ -115,83 +118,90 @@ def plotting_save_experiment_data(ID, model, history, y_actual, y_predicted):
     pyplot.plot(y_predicted, label='predicted')
     pyplot.legend()
     pyplot.title('RMSE: %.3f' % rmse + " , " + 'MAPE: %.3f' % MAPE)
-    pyplot.savefig('experimentOutput\\' + ID + "forcast_fig.png")
+    pyplot.savefig('experimentOutput\\' + parameters["ID"] + "forcast_fig.png")
     pyplot.close()
 
 
-def create_fit_model(data, scaler, n_days, n_features, n_train_days, n_epochs, n_batch, n_neurons, verbosevalue,
-                     ID='s', earlystop=False):
+def create_fit_model(data, scaler):
     # split into train and test sets
     values = data.values
-    train = values[:n_train_days, :]
-    test = values[n_train_days:, :]
+    print(values.shape)
+    train = values[:parameters["n_traindays"], :]
+    test = values[parameters["n_traindays"]:, :]
     # split into input and outputs
-    n_obs = n_days * n_features
-    train_X, train_y = train[:, :n_obs], train[:, -n_features]
-    test_X, test_y = test[:, :n_obs], test[:, -n_features]
+    n_obs = parameters["n_days"] * parameters["n_features"]
+    train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
+    test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
     # print(train_X.shape, len(train_X), train_y.shape)
     # reshape input to be 3D [samples, timesteps, features]
-    train_X = train_X.reshape((train_X.shape[0], n_days, n_features))
-    test_X = test_X.reshape((test_X.shape[0], n_days, n_features))
+    train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
+    test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
     print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
     model = Sequential()
-    model.add(LSTM(n_neurons, input_shape=(train_X.shape[1], train_X.shape[2])))
+    model.add(LSTM(parameters["n_neurons"], input_shape=(train_X.shape[1], train_X.shape[2]), return_sequences=True))
+    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
+    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
+    model.add(LSTM(parameters["n_neurons"]))
+
     # model.add(Dense(60))
-    model.add(Dropout(0.2))
+    # #model.add(Dropout(0.2))
     # model.add(Dense(20))
-    # model.add(Dropout(0.2))
-    # model.add(Dense(10))
-    # model.add(Dropout(0.2))
+    # # model.add(Dropout(0.2))
+    # # model.add(Dense(10))
+    # # model.add(Dropout(0.2))
     model.add(Dense(1))
 
     model.compile(loss='mean_squared_error', optimizer='adam')
     # fit network
     clbs = None
+    print(model.summary())
 
-    if (earlystop):
-        earlyStopping = keras.callbacks.EarlyStopping(monitor='val_loss', patience=3, verbose=2, mode='auto')
+    if parameters["earlystop"]:
+        earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=2, mode='auto')
         clbs = [earlyStopping]
 
-    history = model.fit(train_X, train_y, epochs=n_epochs, batch_size=n_batch, validation_data=(test_X, test_y),
-                        verbose=verbosevalue,
+    history = model.fit(train_X, train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
+                        validation_data=(test_X, test_y),
+                        verbose=parameters["model_train_verbose"],
                         shuffle=False, callbacks=clbs)
 
     # make a prediction
     yhat = model.predict(test_X)
-    test_X = test_X.reshape((test_X.shape[0], n_days * n_features))
+    test_X = test_X.reshape((test_X.shape[0], parameters["n_days"] * parameters["n_features"]))
 
     # invert scaling for actual
     test_y = test_y.reshape((len(test_y), 1))
-    inv_y = concatenate((test_y, test_X[:, -n_features + 1:]), axis=1)
+    inv_y = concatenate((test_y, test_X[:, -parameters["n_features"] + 1:]), axis=1)
     inv_y = scaler.inverse_transform(inv_y)
     inv_y = inv_y[:, 0]
 
     # invert scaling for forecast
-    inv_yhat = concatenate((yhat, test_X[:, -n_features + 1:]), axis=1)
+    inv_yhat = concatenate((yhat, test_X[:, -parameters["n_features"] + 1:]), axis=1)
     inv_yhat = scaler.inverse_transform(inv_yhat)
     inv_yhat = inv_yhat[:, 0]
 
-    plotting_save_experiment_data(ID, model, history, inv_y, inv_yhat)
+    plotting_save_experiment_data(model, history, inv_y, inv_yhat)
 
 
-def run_experiment(n_days, n_features, n_train_days, n_epochs, n_batch, n_neurons, verbosevalue, ID):
-    data, scaler = load_prepare_data(n_days)
-    create_fit_model(data, scaler, n_days, n_features, n_train_days, n_epochs,
-                     n_batch, n_neurons, verbosevalue, ID, earlystop=True)
+def run_experiment():
+    data, scaler = load_prepare_data()
+    create_fit_model(data, scaler)
 
 
 def main():
-    n_days = 7
-    n_features = 4
-    n_train_days = 365 * 11
-    n_epochs = 150
-    n_batch = 128
-    n_neurons = 256
-    verbosevalue = 2
-    ID = uuid.uuid4().hex
-    run_experiment(n_days, n_features, n_train_days, n_epochs, n_batch, n_neurons, verbosevalue, ID)
+    parameters["ID"] = uuid.uuid4().hex
+    parameters["n_days"] = 7
+    parameters["n_features"] = 4
+    parameters["n_traindays"] = 365 * 11
+    parameters["n_epochs"] = 1
+    parameters["n_batch"] = 128
+    parameters["n_neurons"] = 10
+    parameters["model_train_verbose"] = 2
+    parameters["earlystop"] = True
+
+    run_experiment()
 
 
 main()
