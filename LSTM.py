@@ -67,7 +67,7 @@ def mean_absolute_percentage_error(y_true, y_pred):
 def load_prepare_data():
     # load dataset
     dataset = read_csv('load.csv', header=0, index_col=0, parse_dates=True)
-    # dataset = removing_seasonal_data(dataset, 'MaxLoad')
+
     values = dataset.values
     print(dataset)
     # ensure all data is float
@@ -86,6 +86,7 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     # save data
     writer = ExcelWriter('experimentOutput\\' + parameters["ID"] + 'results.xlsx')
     df = DataFrame.from_dict(parameters, orient='index')
+    df.columns = ['value']
     df.to_excel(writer, 'parameters')
     df = DataFrame(list(zip(y_actual, y_predicted)), columns=['y_actual', 'y_predicted'])
     df.to_excel(writer, 'predicted')
@@ -112,6 +113,7 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     # calculate MAPE
     MAPE = mean_absolute_percentage_error(y_actual, y_predicted)
     print('Test MAPE: %.3f' % MAPE)
+    print('min val_loss: %.3f' % min(history.history['val_loss']))
 
     # plot actual vs predicted
     pyplot.plot(y_actual, label='actual')
@@ -132,7 +134,6 @@ def create_fit_model(data, scaler):
     n_obs = parameters["n_days"] * parameters["n_features"]
     train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
     test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
-    # print(train_X.shape, len(train_X), train_y.shape)
     # reshape input to be 3D [samples, timesteps, features]
     train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
     test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
@@ -140,24 +141,16 @@ def create_fit_model(data, scaler):
 
     # design network
     model = Sequential()
-    model.add(LSTM(parameters["n_neurons"], input_shape=(train_X.shape[1], train_X.shape[2]), return_sequences=True))
-    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
-    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
-    model.add(LSTM(parameters["n_neurons"]))
-
-    # model.add(Dense(60))
-    # #model.add(Dropout(0.2))
-    # model.add(Dense(20))
-    # # model.add(Dropout(0.2))
-    # # model.add(Dense(10))
-    # # model.add(Dropout(0.2))
+    model.add(LSTM(parameters["n_neurons"], input_shape=(train_X.shape[1], train_X.shape[2])))
+    model.add(Dropout(0.5))
+    model.add(Dense(600, activation='relu', kernel_initializer='random_uniform'))
+    model.add(Dropout(0.5))
+    model.add(Dense(25, activation='relu'))
     model.add(Dense(1))
 
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss='mean_squared_error', optimizer='RMSprop')
     # fit network
     clbs = None
-    print(model.summary())
-
     if parameters["earlystop"]:
         earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=2, mode='auto')
         clbs = [earlyStopping]
@@ -187,6 +180,7 @@ def create_fit_model(data, scaler):
 
 def run_experiment():
     data, scaler = load_prepare_data()
+
     create_fit_model(data, scaler)
 
 
@@ -195,13 +189,19 @@ def main():
     parameters["n_days"] = 7
     parameters["n_features"] = 4
     parameters["n_traindays"] = 365 * 11
-    parameters["n_epochs"] = 1
-    parameters["n_batch"] = 128
-    parameters["n_neurons"] = 10
+    parameters["n_epochs"] = 1000
+    parameters["n_batch"] = 64
+    parameters["n_neurons"] = 100
     parameters["model_train_verbose"] = 2
-    parameters["earlystop"] = True
+    parameters["earlystop"] = False
+
+    # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
+    # with-recurrent - neural - networks.html
+
+    print(parameters.keys())
 
     run_experiment()
-
+    import gc
+    gc.collect()
 
 main()
