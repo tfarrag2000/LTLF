@@ -10,6 +10,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Dropout
 from keras.layers import LSTM, GRU
 from keras.callbacks import EarlyStopping
+from keras import regularizers
 from pandas import ExcelWriter
 import uuid
 import numpy as np
@@ -101,8 +102,9 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
 
     # plot history loss
     pyplot.close()
-    pyplot.plot(history.history['loss'], label='train')
-    pyplot.plot(history.history['val_loss'], label='test')
+    pyplot.plot(history.history['loss'], label='train_loss')
+    pyplot.plot(history.history['val_loss'], label='test_loss')
+    pyplot.plot(history.history['val_mean_absolute_percentage_error'], label='MAPE')
     pyplot.legend()
     pyplot.savefig('experimentOutput\\' + parameters["ID"] + "loss_fig.png")
     pyplot.close()
@@ -113,7 +115,9 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     # calculate MAPE
     MAPE = mean_absolute_percentage_error(y_actual, y_predicted)
     print('Test MAPE: %.3f' % MAPE)
-    print('min val_loss: %.3f' % min(history.history['val_loss']))
+    min_train_loss = min(history.history['loss'])
+    min_val_loss = min(history.history['val_loss'])
+    print('min val_loss: %.3f' % min_val_loss)
 
     # plot actual vs predicted
     pyplot.plot(y_actual, label='actual')
@@ -122,6 +126,28 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     pyplot.title('RMSE: %.3f' % rmse + " , " + 'MAPE: %.3f' % MAPE)
     pyplot.savefig('experimentOutput\\' + parameters["ID"] + "forcast_fig.png")
     pyplot.close()
+
+    # save to database
+    if parameters["save_to_database"]:
+        import MySQLdb
+        db = MySQLdb.connect(host="localhost", user="tfarrag", passwd="mansoura", db="mydata")
+        # prepare a cursor object using cursor() method
+        cursor = db.cursor()
+        sql = """INSERT INTO experiments (experiment_ID, n_days, n_features, n_traindays, n_epochs, n_batch, 
+        n_neurons,earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary) VALUES ('{}',{},{},{}, {}, {}, 
+        {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}')""" \
+            .format(parameters["ID"], parameters["n_days"], parameters["n_features"], parameters["n_traindays"],
+                    parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["earlystop"],
+                    rmse, MAPE, min_train_loss, min_val_loss, model.summary())
+
+        try:
+            cursor.execute(sql)
+            db.commit()
+            print("** saved to database")
+        except:
+            db.rollback()
+
+        db.close()
 
 
 def create_fit_model(data, scaler):
@@ -143,12 +169,11 @@ def create_fit_model(data, scaler):
     model = Sequential()
     model.add(LSTM(parameters["n_neurons"], input_shape=(train_X.shape[1], train_X.shape[2])))
     model.add(Dropout(0.5))
-    model.add(Dense(600, activation='relu', kernel_initializer='random_uniform'))
+    model.add(Dense(32))
     model.add(Dropout(0.5))
-    model.add(Dense(25, activation='relu'))
     model.add(Dense(1))
 
-    model.compile(loss='mean_squared_error', optimizer='RMSprop')
+    model.compile(loss='mean_squared_error', optimizer='Adam', metrics=['MAPE'])
     # fit network
     clbs = None
     if parameters["earlystop"]:
@@ -186,22 +211,22 @@ def run_experiment():
 
 def main():
     parameters["ID"] = uuid.uuid4().hex
-    parameters["n_days"] = 7
+    parameters["n_days"] = 30
     parameters["n_features"] = 4
     parameters["n_traindays"] = 365 * 11
-    parameters["n_epochs"] = 1000
-    parameters["n_batch"] = 64
-    parameters["n_neurons"] = 100
+    parameters["n_epochs"] = 50
+    parameters["n_batch"] = 512
+    parameters["n_neurons"] = 64
     parameters["model_train_verbose"] = 2
     parameters["earlystop"] = False
+    parameters["save_to_database"] = True
 
     # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
     # with-recurrent - neural - networks.html
 
-    print(parameters.keys())
-
     run_experiment()
     import gc
     gc.collect()
+
 
 main()
