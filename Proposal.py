@@ -6,14 +6,13 @@ from pandas import DataFrame
 from pandas import concat
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
-from keras.models import Sequential, Model
-
-from keras.layers import Dense, Dropout, Activation
-from keras.layers import LSTM, Input, Flatten, Reshape
-from keras.layers.merge import Concatenate
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.layers import LSTM, GRU
 from keras.callbacks import EarlyStopping
+from keras import regularizers
 from pandas import ExcelWriter
-import keras
+import uuid
 import numpy as np
 import os
 
@@ -84,9 +83,6 @@ def load_prepare_data():
 
 
 def plotting_save_experiment_data(model, history, y_actual, y_predicted):
-    # plot history
-    plot_model(model, to_file='experimentOutput\\' + parameters["ID"] + 'model_fig.png', show_shapes=True,
-               show_layer_names=True)
     print(model.summary())
     # save data
     y_actual = y_actual[:-1]
@@ -102,7 +98,9 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     writer.save()
     writer.close()
 
-
+    # plot history
+    plot_model(model, to_file='experimentOutput\\' + parameters["ID"] + 'model_fig.png', show_shapes=True,
+               show_layer_names=True)
 
     # plot history loss
     pyplot.close()
@@ -165,40 +163,27 @@ def create_fit_model(data, scaler):
     n_obs = parameters["n_days"] * parameters["n_features"]
     train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
     test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
-    # reshape input to be 3D [samples, timesteps, features] for LSTM
+    # reshape input to be 3D [samples, timesteps, features]
     train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
     test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
-    # print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
+    print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
-    visible1 = Input(shape=(train_X.shape[1], train_X.shape[2]))
-    L1 = LSTM(parameters["n_neurons"])(visible1)
-    L1_1 = Activation('relu')(L1)
-    L2 = Dense(64, activation='relu')(L1_1)
-    # -------------
-    # visible2 = Input(shape=(train_X.shape[1], train_X.shape[2]))
-    LL2 = Dense(1024, activation='relu')(visible1)
-    LL3 = Dense(256, activation='relu')(LL2)
-    LL4 = Dense(64, activation='relu')(LL3)
+    model = Sequential()
+    model.add(LSTM(parameters["n_neurons"], input_shape=(train_X.shape[1], train_X.shape[2])))
+    model.add(Dropout(0.5))
+    model.add(Dense(32))
+    model.add(Dropout(0.5))
+    model.add(Dense(1))
 
-    # merge input models
-    merge = Concatenate([L2, LL3])
-
-    h1 = Dense(32)(merge)
-    h1_1 = Activation('relu')(h1)
-    output = Dense(1)(h1_1)
-
-    model = Model(inputs=visible1, outputs=output)
-    opt = keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
-    model.compile(loss='mean_squared_error', optimizer=opt)
-
+    model.compile(loss='mean_squared_error', optimizer='Adam')
     # fit network
     clbs = None
     if parameters["earlystop"]:
         earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=2, mode='auto')
         clbs = [earlyStopping]
 
-    history = model.fit(train_X, y=train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
+    history = model.fit(train_X, train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
                         validation_data=(test_X, test_y),
                         verbose=parameters["model_train_verbose"],
                         shuffle=False, callbacks=clbs)
@@ -218,8 +203,6 @@ def create_fit_model(data, scaler):
     inv_yhat = scaler.inverse_transform(inv_yhat)
     inv_yhat = inv_yhat[:, 0]
 
-    # inv_yhat=1
-    # inv_y=1
     plotting_save_experiment_data(model, history, inv_y, inv_yhat)
 
 
@@ -234,12 +217,12 @@ def main():
 
     now = datetime.datetime.now()
     parameters["ID"] = now.strftime("%Y%m%d%H%M")  # uuid.uuid4().hex
-    parameters["n_days"] = 7
+    parameters["n_days"] = 4
     parameters["n_features"] = 4
     parameters["n_traindays"] = 365 * 11
-    parameters["n_epochs"] = 3
+    parameters["n_epochs"] = 50
     parameters["n_batch"] = 128
-    parameters["n_neurons"] = 1024
+    parameters["n_neurons"] = 64
     parameters["model_train_verbose"] = 2
     parameters["earlystop"] = True
     parameters["save_to_database"] = False
