@@ -8,13 +8,13 @@ def parse(x):
     return datetime.strptime(x, '%Y %m %d')
 
 
-dataset = read_csv(r'C:\Users\T\OneDrive\My Research\LTLF\new DataSet\SACombinedData.csv', delimiter=';',
+dataset = read_csv(r'..\..\LTLF\new DataSet\SACombinedData.csv', delimiter=';',
                    parse_dates=[['Year', 'Month', 'Day']], index_col=0, date_parser=parse, keep_date_col=True)
 
-print(dataset.columns.values.tolist())
-# dataset = dataset[['MaxLoad', 'max_temp', 'min_temp', 'weekday']]
+# print(dataset.columns.values.tolist())
+dataset = dataset[['MaxLoad']]  ### , 'max_temp', 'min_temp', 'weekday','Month'
 dataset['MaxLoad'] = dataset['MaxLoad'] / 1000
-print(dataset.columns.values.tolist())
+# print(dataset.columns.values.tolist())
 
 # removing seasonal data
 import statsmodels.api as sm
