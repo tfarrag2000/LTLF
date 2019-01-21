@@ -8,9 +8,7 @@ from pandas import concat
 
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Dropout, Activation
-from tensorflow.keras.layers import LSTM, Input, Flatten, Reshape
-from tensorflow.keras.layers import Conv1D
-from tensorflow.keras.layers import MaxPooling1D
+from tensorflow.keras.layers import LSTM, Input, Flatten, Reshape, TimeDistributed
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import plot_model
 
@@ -21,6 +19,8 @@ from pandas import ExcelWriter
 import numpy as np
 import mysql.connector
 import os
+
+from tensorflow.python.keras.layers import Conv1D, MaxPooling1D
 
 os.environ["PATH"] += os.pathsep + r'C:\Program Files (x86)\Graphviz2.38\bin'
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -77,11 +77,11 @@ def load_prepare_data():
     dataset = read_csv('Load.csv', header=0, index_col=0, parse_dates=True)
 
     values = dataset.values
-    print(dataset)
+    # print(dataset)
     # ensure all data is float
     values = values.astype('float32')
     # normalize features
-    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler = MinMaxScaler(feature_range=(-1, 1))
     scaled = scaler.fit_transform(values)
     # frame as supervised learning
     reframed = series_to_supervised(scaled, parameters["n_days"], 1, dropnan=True)
@@ -100,7 +100,7 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     model.summary(print_fn=lambda x: stringlist.append(x))
     short_model_summary = "\n".join(stringlist)
 
-    print(short_model_summary)
+    # print(short_model_summary)
 
     y_actual = y_actual[:-1]
     y_predicted = y_predicted[1:]
@@ -152,16 +152,18 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
         cursor = db.cursor()
 
         sql = """INSERT INTO experiments (experiment_ID, n_days, n_features, n_traindays, n_epochs, n_batch, 
-        n_neurons,earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary) VALUES ('{}',{},{},{}, {}, {}, 
-        {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}')""" \
+        n_neurons,Dropout, earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary,comment) VALUES ('{}',{},{},{}, {}, {}, 
+        {}, {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}', '{}')""" \
             .format(parameters["ID"], parameters["n_days"], parameters["n_features"], parameters["n_traindays"],
-                    parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["earlystop"],
-                    rmse, MAPE, min_train_loss, min_val_loss, short_model_summary)
+                    parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["Dropout"],
+                    parameters["earlystop"], rmse, MAPE, min_train_loss, min_val_loss, short_model_summary,
+                    parameters["comment"])
         try:
             cursor.execute(sql)
             db.commit()
             print("** saved to database")
-        except:
+        except TypeError as e:
+            print(e)
             db.rollback()
             print("** Error saving to database")
 
@@ -195,19 +197,21 @@ def create_fit_model(data, scaler):
     model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=(train_X.shape[1], train_X.shape[2])))
     model.add(MaxPooling1D(pool_size=2))
     model.add(Flatten())
+    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dropout(parameters["Dropout"]))
     model.add(Dense(1))
 
     # MaxLoad only
     # model = Sequential()
-    # model.add(LSTM(100))
-    # model.add(Dropout(0.2))
-    # model.add(Dense(1000, activation='sigmoid'))
-    # model.add(Dropout(0.2))
-    # model.add(Dense(500, activation='tanh'))
-    # model.add(Dropout(0.2))
-    model.add(Dense(50, activation='relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(1))
+    # # model.add(LSTM(parameters["n_neurons"], return_sequences=False))
+    # # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(parameters["n_neurons"], activation='relu'))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(parameters["n_neurons"], activation='relu'))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(parameters["n_neurons"], activation='relu'))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(1))
 
     # opt = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
     model.compile(loss='mean_squared_error', optimizer='adam')
@@ -252,26 +256,33 @@ def run_experiment():
 
 
 def main():
-    import datetime
+    i = 1
+    for bat in (64, 128, 256, 512, 1024):
+        for d in (1, 2, 7, 30):
+            for drop in (0.2, 0.5, 0.8):
+                for nn in (10, 50, 100):
+                    import datetime
+                    now = datetime.datetime.now()
+                    parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
+                    parameters["n_days"] = d
+                    parameters["n_features"] = 1
+                    parameters["n_traindays"] = 365 * 11
+                    parameters["n_epochs"] = 1000
+                    parameters["Dropout"] = drop
+                    parameters["n_batch"] = bat
+                    parameters["n_neurons"] = nn
+                    parameters["model_train_verbose"] = 2
+                    parameters["earlystop"] = True
+                    parameters["save_to_database"] = True
+                    parameters["comment"] = 'Model 3 CNN+ANN ' + 'Trail ' + str(i)
+                    i = i + 1
+                    print('Trail ' + str(i))
 
-    now = datetime.datetime.now()
-    parameters["ID"] = now.strftime("%Y%m%d%H%M")  # uuid.uuid4().hex
-    parameters["n_days"] = 5
-    parameters["n_features"] = 1
-    parameters["n_traindays"] = 365 * 11
-    parameters["n_epochs"] = 200
-    parameters["n_batch"] = 256
-    parameters["n_neurons"] = 10
-    parameters["model_train_verbose"] = 2
-    parameters["earlystop"] = True
-    parameters["save_to_database"] = True
+                    # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
+                    # with-recurrent - neural - networks.html
 
-    # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
-    # with-recurrent - neural - networks.html
-
-    run_experiment()
-    import gc
-    gc.collect()
-
+                    run_experiment()
+                    import gc
+                    gc.collect()
 
 main()
