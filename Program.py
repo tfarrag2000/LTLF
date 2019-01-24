@@ -7,7 +7,7 @@ from pandas import DataFrame
 from pandas import concat
 
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Dropout, Activation
+from tensorflow.keras.layers import Dense, Dropout, Activation, Bidirectional
 from tensorflow.keras.layers import LSTM, Input, Flatten, Reshape, TimeDistributed
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import plot_model
@@ -181,8 +181,8 @@ def create_fit_model(data, scaler):
     train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
     test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
     # reshape input to be 3D [samples, timesteps, features] for LSTM and CNN
-    train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
-    test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
+    # train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
+    # test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
     print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
@@ -193,25 +193,25 @@ def create_fit_model(data, scaler):
     # output = Dense(1)(L2)
     # model = Model(inputs=visible1, outputs=output)
     # # -------------
-    model = Sequential()
-    model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=(train_X.shape[1], train_X.shape[2])))
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Flatten())
-    model.add(Dense(parameters["n_neurons"], activation='relu'))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(1))
-
-    # MaxLoad only
     # model = Sequential()
-    # # model.add(LSTM(parameters["n_neurons"], return_sequences=False))
-    # # model.add(Dropout(parameters["Dropout"]))
-    # model.add(Dense(parameters["n_neurons"], activation='relu'))
-    # model.add(Dropout(parameters["Dropout"]))
-    # model.add(Dense(parameters["n_neurons"], activation='relu'))
-    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=(train_X.shape[1], train_X.shape[2])))
+    # model.add(MaxPooling1D(pool_size=2))
+    # model.add(Flatten())
     # model.add(Dense(parameters["n_neurons"], activation='relu'))
     # model.add(Dropout(parameters["Dropout"]))
     # model.add(Dense(1))
+
+    # MaxLoad only
+    model = Sequential()
+    # model.add(Bidirectional(LSTM(parameters["n_neurons"])))
+    # model.add(Dropout(parameters["Dropout"]))
+    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dropout(parameters["Dropout"]))
+    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dropout(parameters["Dropout"]))
+    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dropout(parameters["Dropout"]))
+    model.add(Dense(1))
 
     # opt = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
     model.compile(loss='mean_squared_error', optimizer='adam')
@@ -257,10 +257,10 @@ def run_experiment():
 
 def main():
     i = 1
-    for bat in (64, 128, 256, 512, 1024):
-        for d in (1, 2, 7, 30):
-            for drop in (0.2, 0.5, 0.8):
-                for nn in (10, 50, 100):
+    for bat in (128, 256, 512):
+        for d in (1):
+            for drop in (0.2, 0.5, 0.8, 1):
+                for nn in (100, 200):
                     import datetime
                     now = datetime.datetime.now()
                     parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
@@ -274,9 +274,10 @@ def main():
                     parameters["model_train_verbose"] = 2
                     parameters["earlystop"] = True
                     parameters["save_to_database"] = True
-                    parameters["comment"] = 'Model 3 CNN+ANN ' + 'Trail ' + str(i)
-                    i = i + 1
+                    parameters["comment"] = 'Repeat Model 2  3 layer ANN ' + 'Trail ' + str(i)
                     print('Trail ' + str(i))
+                    print(parameters)
+                    i = i + 1
 
                     # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
                     # with-recurrent - neural - networks.html
@@ -286,3 +287,5 @@ def main():
                     gc.collect()
 
 main()
+
+# https://machinelearningmastery.com/how-to-develop-lstm-models-for-time-series-forecasting/
