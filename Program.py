@@ -19,6 +19,7 @@ from pandas import ExcelWriter
 import numpy as np
 import mysql.connector
 import os
+import time
 
 from tensorflow.python.keras.layers import Conv1D, MaxPooling1D
 
@@ -183,7 +184,7 @@ def create_fit_model(data, scaler):
     # reshape input to be 3D [samples, timesteps, features] for LSTM and CNN
     # train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
     # test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
-    print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
+    # print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
     # visible1 = Input(shape=(train_X.shape[1], train_X.shape[2]))
@@ -203,7 +204,7 @@ def create_fit_model(data, scaler):
 
     # MaxLoad only
     model = Sequential()
-    # model.add(Bidirectional(LSTM(parameters["n_neurons"])))
+    # model.add(LSTM(parameters["n_neurons"]))
     # model.add(Dropout(parameters["Dropout"]))
     model.add(Dense(parameters["n_neurons"], activation='relu'))
     model.add(Dropout(parameters["Dropout"]))
@@ -213,7 +214,6 @@ def create_fit_model(data, scaler):
     model.add(Dropout(parameters["Dropout"]))
     model.add(Dense(1))
 
-    # opt = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     # fit network
@@ -223,11 +223,10 @@ def create_fit_model(data, scaler):
         clbs = [earlyStopping]
 
     history = model.fit(train_X, y=train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
-                        validation_data=(test_X, test_y),
-                        verbose=parameters["model_train_verbose"],
+                        validation_data=(test_X, test_y), verbose=parameters["model_train_verbose"],
                         shuffle=False, callbacks=clbs)
 
-    parameters["n_epochs"] = len(history.history['loss'])
+    parameters["n_epochs"] = len(history.history["loss"])
 
     # make a prediction
     yhat = model.predict(test_X)
@@ -251,16 +250,15 @@ def create_fit_model(data, scaler):
 
 def run_experiment():
     data, scaler = load_prepare_data()
-    print(data)
     create_fit_model(data, scaler)
 
 
 def main():
     i = 1
-    for bat in (128, 256, 512):
-        for d in (1):
-            for drop in (0.2, 0.5, 0.8, 1):
-                for nn in (100, 200):
+    for bat in (64, 128, 256, 512, 1024):
+        for d in (1, 2, 7, 30):
+            for drop in (0.2, 0.5, 0.8):
+                for nn in (10, 50, 100):
                     import datetime
                     now = datetime.datetime.now()
                     parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
@@ -274,17 +272,18 @@ def main():
                     parameters["model_train_verbose"] = 2
                     parameters["earlystop"] = True
                     parameters["save_to_database"] = True
-                    parameters["comment"] = 'Repeat Model 2  3 layer ANN ' + 'Trail ' + str(i)
+                    parameters["comment"] = "Model 2  4 ANN " + "Trail " + str(i)
                     print('Trail ' + str(i))
                     print(parameters)
                     i = i + 1
-
-                    # https: // tensorflow.rstudio.com / blog / time - series - forecasting -
-                    # with-recurrent - neural - networks.html
+                    time.sleep(2)
+                    print(parameters["ID"])
+                    # https://tensorflow.rstudio.com/blog/time-series-forecasting-with-recurrent-neural-networks.html
 
                     run_experiment()
                     import gc
                     gc.collect()
+
 
 main()
 
