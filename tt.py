@@ -1,31 +1,23 @@
-import tensorflow as tf
 from math import sqrt
 from numpy import concatenate
 from matplotlib import pyplot
 from pandas import read_csv
 from pandas import DataFrame
 from pandas import concat
-
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Dropout, Activation, Bidirectional
-from tensorflow.keras.layers import LSTM, Input, Flatten, Reshape, TimeDistributed
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.utils import plot_model
-
-from sklearn.metrics import mean_squared_error
-
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.layers import LSTM, GRU
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import regularizers
 from pandas import ExcelWriter
+import uuid
 import numpy as np
-import mysql.connector
 import os
-import time
 
-from tensorflow.python.keras.layers import Conv1D, MaxPooling1D
-
-os.environ["PATH"] += os.pathsep + r'C:\Program Files (x86)\Graphviz2.38\bin'
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
+os.environ["PATH"] += os.pathsep + r'C:/Program Files (x86)/Graphviz2.38/bin/'
+from tensorflow.keras.utils import plot_model
 
 # experiment parameters
 parameters = dict()
@@ -75,10 +67,10 @@ def mean_absolute_percentage_error(y_true, y_pred):
 
 def load_prepare_data():
     # load dataset
-    dataset = read_csv('Load.csv', header=0, index_col=0, parse_dates=True)
+    dataset = read_csv('load.csv', header=0, index_col=0, parse_dates=True)
 
     values = dataset.values
-    # print(dataset)
+    print(dataset)
     # ensure all data is float
     values = values.astype('float32')
     # normalize features
@@ -91,21 +83,7 @@ def load_prepare_data():
 
 
 def plotting_save_experiment_data(model, history, y_actual, y_predicted):
-    # model.save('TheModel_'+ parameters["ID"] +'.h5')
-    # del model
-
-    # plot history
-    plot_model(model, to_file='experimentOutput\\' + parameters["ID"] + 'model_fig.png', show_shapes=True,
-               show_layer_names=True)
-    stringlist = []
-    model.summary(print_fn=lambda x: stringlist.append(x))
-    short_model_summary = "\n".join(stringlist)
-
-    # print(short_model_summary)
-
-    y_actual = y_actual[:-1]
-    y_predicted = y_predicted[1:]
-
+    print(model.summary())
     # save data
     writer = ExcelWriter('experimentOutput\\' + parameters["ID"] + 'results.xlsx')
     df = DataFrame.from_dict(parameters, orient='index')
@@ -118,11 +96,15 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     writer.save()
     writer.close()
 
+    # plot history
+    plot_model(model, to_file='experimentOutput\\' + parameters["ID"] + 'model_fig.png', show_shapes=True,
+               show_layer_names=True)
+
     # plot history loss
     pyplot.close()
     pyplot.plot(history.history['loss'], label='train_loss')
     pyplot.plot(history.history['val_loss'], label='test_loss')
-    # pyplot.plot(history.history['val_mean_absolute_percentage_error'], label='MAPE')
+    pyplot.plot(history.history['val_mean_absolute_percentage_error'], label='MAPE')
     pyplot.legend()
     pyplot.savefig('experimentOutput\\' + parameters["ID"] + "loss_fig.png")
     pyplot.close()
@@ -135,7 +117,6 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     print('Test MAPE: %.3f' % MAPE)
     min_train_loss = min(history.history['loss'])
     min_val_loss = min(history.history['val_loss'])
-    print('min train_loss: %.3f' % min_train_loss)
     print('min val_loss: %.3f' % min_val_loss)
 
     # plot actual vs predicted
@@ -148,25 +129,23 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
 
     # save to database
     if parameters["save_to_database"]:
-        db = mysql.connector.connect(host="localhost", user="root", passwd="mansoura", db="LTLF_data")
+        import MySQLdb
+        db = MySQLdb.connect(host="localhost", user="tfarrag", passwd="mansoura", db="mydata")
         # prepare a cursor object using cursor() method
         cursor = db.cursor()
-
         sql = """INSERT INTO experiments (experiment_ID, n_days, n_features, n_traindays, n_epochs, n_batch, 
-        n_neurons,Dropout, earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary,comment) VALUES ('{}',{},{},{}, {}, {}, 
-        {}, {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}', '{}')""" \
+        n_neurons,earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary) VALUES ('{}',{},{},{}, {}, {}, 
+        {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}')""" \
             .format(parameters["ID"], parameters["n_days"], parameters["n_features"], parameters["n_traindays"],
-                    parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["Dropout"],
-                    parameters["earlystop"], rmse, MAPE, min_train_loss, min_val_loss, short_model_summary,
-                    parameters["comment"])
+                    parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["earlystop"],
+                    rmse, MAPE, min_train_loss, min_val_loss, model.summary())
+
         try:
             cursor.execute(sql)
             db.commit()
             print("** saved to database")
-        except TypeError as e:
-            print(e)
+        except:
             db.rollback()
-            print("** Error saving to database")
 
         db.close()
 
@@ -174,63 +153,43 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
 def create_fit_model(data, scaler):
     # split into train and test sets
     values = data.values
-
+    print(values.shape)
     train = values[:parameters["n_traindays"], :]
     test = values[parameters["n_traindays"]:, :]
     # split into input and outputs
     n_obs = parameters["n_days"] * parameters["n_features"]
     train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
     test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
-    # reshape input to be 3D [samples, timesteps, features] for LSTM and CNN
+    # reshape input to be 3D [samples, timesteps, features]
     # train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
     # test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
     # print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
-    # visible1 = Input(shape=(train_X.shape[1], train_X.shape[2]))
-    # L1 = LSTM(parameters["n_neurons"])(visible1)
-    # L1_1 = Activation('sigmoid')(L1)
-    # L2 = Dense(5, activation='relu')(L1_1)
-    # output = Dense(1)(L2)
-    # model = Model(inputs=visible1, outputs=output)
-    # # -------------
-    # model = Sequential()
-    # model.add(Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=(train_X.shape[1], train_X.shape[2])))
-    # model.add(MaxPooling1D(pool_size=2))
-    # model.add(Flatten())
-    # model.add(Dense(parameters["n_neurons"], activation='relu'))
-    # model.add(Dropout(parameters["Dropout"]))
-    # model.add(Dense(1))
-
-    # MaxLoad only
     model = Sequential()
-    # model.add(LSTM(parameters["n_neurons"]))
-    # model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dense(parameters["Dropout"], activation='relu'))
     model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dense(parameters["Dropout"], activation='relu'))
     model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(parameters["n_neurons"], activation='relu'))
+    model.add(Dense(parameters["Dropout"], activation='relu'))
     model.add(Dropout(parameters["Dropout"]))
     model.add(Dense(1))
 
-    model.compile(loss='mean_squared_error', optimizer='adam')
-
+    model.compile(loss='mean_squared_error', optimizer='Adam', metrics=['MAPE'])
     # fit network
     clbs = None
     if parameters["earlystop"]:
-        earlyStopping = EarlyStopping(monitor='val_loss', patience=10, verbose=2, mode='auto')
+        earlyStopping = EarlyStopping(monitor='val_loss', patience=5, verbose=2, mode='auto')
         clbs = [earlyStopping]
 
-    history = model.fit(train_X, y=train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
-                        validation_data=(test_X, test_y), verbose=parameters["model_train_verbose"],
+    history = model.fit(train_X, train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
+                        validation_data=(test_X, test_y),
+                        verbose=parameters["model_train_verbose"],
                         shuffle=False, callbacks=clbs)
-
-    parameters["n_epochs"] = len(history.history["loss"])
 
     # make a prediction
     yhat = model.predict(test_X)
-    test_X = test_X.reshape((test_X.shape[0], parameters["n_days"] * parameters["n_features"]))
+    # test_X = test_X.reshape((test_X.shape[0], parameters["n_days"] * parameters["n_features"]))
 
     # invert scaling for actual
     test_y = test_y.reshape((len(test_y), 1))
@@ -243,47 +202,40 @@ def create_fit_model(data, scaler):
     inv_yhat = scaler.inverse_transform(inv_yhat)
     inv_yhat = inv_yhat[:, 0]
 
-    # inv_yhat=1
-    # inv_y=1
     plotting_save_experiment_data(model, history, inv_y, inv_yhat)
 
 
 def run_experiment():
     data, scaler = load_prepare_data()
+
     create_fit_model(data, scaler)
 
 
 def main():
-    i = 1
-    for bat in (64, 128, 256, 512, 1024):
-        for d in (1, 2, 7, 30):
-            for drop in (0.2, 0.5, 0.8):
-                for nn in (10, 50, 100):
-                    import datetime
-                    now = datetime.datetime.now()
-                    parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
-                    parameters["n_days"] = d
-                    parameters["n_features"] = 1
-                    parameters["n_traindays"] = 365 * 11
-                    parameters["n_epochs"] = 1000
-                    parameters["Dropout"] = drop
-                    parameters["n_batch"] = bat
-                    parameters["n_neurons"] = nn
-                    parameters["model_train_verbose"] = 2
-                    parameters["earlystop"] = True
-                    parameters["save_to_database"] = True
-                    parameters["comment"] = "Model 2  4 ANN " + "Trail " + str(i)
-                    print('Trail ' + str(i))
-                    print(parameters)
-                    i = i + 1
-                    print(parameters["ID"])
-                    # https://tensorflow.rstudio.com/blog/time-series-forecasting-with-recurrent-neural-networks.html
+    i=1
+    import datetime
+    now = datetime.datetime.now()
+    parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
+    parameters["n_days"] = 1
+    parameters["n_features"] = 1
+    parameters["n_traindays"] = 365 * 11
+    parameters["n_epochs"] = 1000
+    parameters["Dropout"] = 0.2
+    parameters["n_batch"] = 256
+    parameters["n_neurons"] = 100
+    parameters["model_train_verbose"] = 2
+    parameters["earlystop"] = True
+    parameters["save_to_database"] = False
+    parameters["comment"] = "Model 2  4 ANN " + "Trail " + str(i)
+    print('Trail ' + str(i))
+    print(parameters)
+    i = i + 1
+    print(parameters["ID"])
+    # https://tensorflow.rstudio.com/blog/time-series-forecasting-with-recurrent-neural-networks.html
 
-                    run_experiment()
-                    import gc
-                    gc.collect()
+    run_experiment()
+    import gc
+    gc.collect()
 
 
 main()
-
-# https://machinelearningmastery.com/how-to-develop-lstm-models-for-time-series-forecasting/
