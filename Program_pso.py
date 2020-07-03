@@ -113,19 +113,19 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     df.to_excel(writer, 'parameters')
     df = DataFrame(list(zip(y_actual, y_predicted)), columns=['y_actual', 'y_predicted'])
     df.to_excel(writer, 'predicted')
-    df = DataFrame(list(zip(history.history['loss'], history.history['val_loss'])), columns=['loss', 'val_loss'])
-    df.to_excel(writer, 'loss_history')
+    # df = DataFrame(list(zip(history.history['loss'], history.history['val_loss'])), columns=['loss', 'val_loss'])
+    # df.to_excel(writer, 'loss_history')
     writer.save()
     writer.close()
 
     # plot history loss
-    pyplot.close()
-    pyplot.plot(history.history['loss'], label='train_loss')
-    pyplot.plot(history.history['val_loss'], label='test_loss')
-    # pyplot.plot(history.history['val_mean_absolute_percentage_error'], label='MAPE')
-    pyplot.legend()
-    pyplot.savefig('experimentOutput\\' + parameters["ID"] + "loss_fig.png")
-    pyplot.close()
+    # pyplot.close()
+    # pyplot.plot(history.history['loss'], label='train_loss')
+    # pyplot.plot(history.history['val_loss'], label='test_loss')
+    # # pyplot.plot(history.history['val_mean_absolute_percentage_error'], label='MAPE')
+    # pyplot.legend()
+    # pyplot.savefig('experimentOutput\\' + parameters["ID"] + "loss_fig.png")
+    # pyplot.close()
 
     # calculate RMSE
     rmse = sqrt(mean_squared_error(y_actual, y_predicted))
@@ -133,10 +133,10 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
     # calculate MAPE
     MAPE = mean_absolute_percentage_error(y_actual, y_predicted)
     print('Test MAPE: %.3f' % MAPE)
-    min_train_loss = min(history.history['loss'])
-    min_val_loss = min(history.history['val_loss'])
-    print('min train_loss: %.3f' % min_train_loss)
-    print('min val_loss: %.3f' % min_val_loss)
+    # min_train_loss = min(history.history['loss'])
+    # min_val_loss = min(history.history['val_loss'])
+    #     print('min train_loss: %.3f' % min_train_loss)
+    # print('min val_loss: %.3f' % min_val_loss)
 
     # plot actual vs predicted
     pyplot.plot(y_actual, label='actual')
@@ -153,12 +153,12 @@ def plotting_save_experiment_data(model, history, y_actual, y_predicted):
         cursor = db.cursor()
 
         sql = """INSERT INTO experiments (experiment_ID, n_days, n_features, n_traindays, n_epochs, n_batch, 
-        n_neurons,Dropout, earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary,comment,optimizer) VALUES ('{}',{},{},{}, {}, {}, 
-        {}, {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}', '{}', '{}')""" \
+        n_neurons,Dropout, earlystop, RMSE, MAPE, min_train_loss, min_val_loss, Model_summary,comment) VALUES ('{}',{},{},{}, {}, {}, 
+        {}, {}, {}, {:.4f},{:.4f}, {:.4f}, {:.4f}, '{}', '{}')""" \
             .format(parameters["ID"], parameters["n_days"], parameters["n_features"], parameters["n_traindays"],
                     parameters["n_epochs"], parameters["n_batch"], parameters["n_neurons"], parameters["Dropout"],
                     parameters["earlystop"], rmse, MAPE, min_train_loss, min_val_loss, short_model_summary,
-                    parameters["comment"],parameters["optimizer"])
+                    parameters["comment"])
         try:
             cursor.execute(sql)
             db.commit()
@@ -183,8 +183,8 @@ def create_fit_model(data, scaler):
     train_X, train_y = train[:, :n_obs], train[:, -parameters["n_features"]]
     test_X, test_y = test[:, :n_obs], test[:, -parameters["n_features"]]
     # reshape input to be 3D [samples, timesteps, features] for LSTM and CNN
-    train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
-    test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
+    # train_X = train_X.reshape((train_X.shape[0], parameters["n_days"], parameters["n_features"]))
+    # test_X = test_X.reshape((test_X.shape[0], parameters["n_days"], parameters["n_features"]))
     # print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
     # design network
@@ -205,32 +205,45 @@ def create_fit_model(data, scaler):
 
     # MaxLoad only
     model = Sequential()
-    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(LSTM(parameters["n_neurons"], return_sequences=True))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(LSTM(parameters["n_neurons"]))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(64, activation='relu'))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dropout(parameters["Dropout"]))
-    model.add(Dense(1))
-    model.add(Activation('relu'))
-
-    model.compile(loss='mean_squared_error', optimizer=parameters["optimizer"])
+    # model.add(LSTM(parameters["n_neurons"], return_sequences=True))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(LSTM(parameters["n_neurons"], return_sequences=True))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(LSTM(parameters["n_neurons"]))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(64, activation='relu'))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(32, activation='relu'))
+    # model.add(Dropout(parameters["Dropout"]))
+    # model.add(Dense(1))
+    model = Sequential()
+    model.add(Dense(4, activation='sigmoid', input_dim=4, use_bias=True))
+    model.add(Dense(4, activation='sigmoid', use_bias=True))
+    model.add(Dense(1, activation='softmax', use_bias=True))
+    model.compile(loss='mse', optimizer='adam')
 
     # fit network
-    clbs = None
-    if parameters["earlystop"]:
-        earlyStopping = EarlyStopping(monitor='val_loss', patience=10, verbose=2, mode='auto')
-        clbs = [earlyStopping]
+    #
 
-    history = model.fit(train_X, y=train_y, epochs=parameters["n_epochs"], batch_size=parameters["n_batch"],
-                        validation_data=(test_X, test_y), verbose=parameters["model_train_verbose"],
-                        shuffle=False, callbacks=clbs)
+    #### Section III: Then run the particle swarm optimization
+    # First build model to train on (primarily used for structure, also included in swarm)
+    # done before
 
-    parameters["n_epochs"] = len(history.history["loss"])
+    # Instantiate optimizer with model, loss function, and hyperparameters
+    pso = Optimizer(model=model,
+                    loss='mse',
+                    n=100,  # Number of particles
+                    acceleration=5.0,  # Contribution of recursive particle velocity (acceleration)
+                    local_rate=0.6,  # Contribution of locally best weights to new velocity
+                    global_rate=0.4)  # Contribution of globally best weights to new velocity
+
+    # Train model on provided data
+    history = pso.fit(train_X, train_y, steps=5, batch_size=32)
+
+    # Get a copy of the model with the globally best weights
+    model = pso.get_best_model()
+
+#    parameters["n_epochs"] = len(history.history["loss"])
 
     # make a prediction
     yhat = model.predict(test_X)
@@ -259,33 +272,28 @@ def run_experiment():
 
 def main():
     i = 1
-    d=1
-    op='Adam'
-    nn=50
-    for bat in [64,256,512]:
-        for op in ['SGD','RMSprop','Adagrad','Adadelta','Adam','Adamax','Nadam']:
-            for drop in [0.2,0.5,0.8]:
-                # for nn in [50,100,200]:
+    for bat in [32, 256, 512]:
+        for d in [4]:
+            for drop in [0, 0.8]:
+                for nn in [50, 100]:
                     import datetime
                     now = datetime.datetime.now()
                     parameters["ID"] = now.strftime("%Y%m%d%H%M%S")  # uuid.uuid4().hex
                     parameters["n_days"] = d
                     parameters["n_features"] = 1
                     parameters["n_traindays"] = 365 * 11
-                    parameters["n_epochs"] = 1000
+                    parameters["n_epochs"] = 300
                     parameters["Dropout"] = drop
                     parameters["n_batch"] = bat
                     parameters["n_neurons"] = nn
                     parameters["model_train_verbose"] = 2
                     parameters["earlystop"] = True
-                    parameters["save_to_database"] = False
-                    parameters["optimizer"] = op
-                    parameters["comment"] = "Model 6   optimizer=" +  parameters["optimizer"] + " Trail " + str(i)
-
+                    parameters["save_to_database"] = True
+                    parameters["comment"] = "Model 6  + PSO " + "Trail " + str(i)
+                    print(parameters["comment"])
+                    print(parameters)
                     i = i + 1
                     print(parameters["ID"])
-                    print(parameters)
-
                     # https://tensorflow.rstudio.com/blog/time-series-forecasting-with-recurrent-neural-networks.html
 
                     run_experiment()

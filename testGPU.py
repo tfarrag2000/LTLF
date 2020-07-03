@@ -1,9 +1,24 @@
-import tensorflow as tf
+import numpy as np
+import matplotlib as plt
 
-with tf.device('/gpu:0'):
-    a = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[2, 3], name='a')
-    b = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[3, 2], name='b')
-    c = tf.matmul(a, b)
+import matplotlib.pyplot as plt
 
-with tf.Session() as sess:
-    print(sess.run(c))
+import os
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# for testing on CPU
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+# keras imports for the dataset and building our neural network
+from tensorflow.keras.datasets import mnist
+
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+fig = plt.figure()
+for i in range(9):
+    plt.subplot(3, 3, i + 1)
+    plt.tight_layout()
+    plt.imshow(X_train[i], cmap='gray', interpolation='none')
+    plt.title("Digit: {}".format(y_train[i]))
+    plt.xticks([])
+    plt.yticks([])
+    plt.show()
