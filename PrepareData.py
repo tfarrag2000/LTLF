@@ -1,6 +1,6 @@
-from pandas import read_csv
 from datetime import datetime
-import numpy as np
+
+from pandas import read_csv
 
 
 # load data
@@ -12,7 +12,7 @@ dataset = read_csv(r'..\new DataSet\SACombinedData.csv', delimiter=';',
                    parse_dates=[['Year', 'Month', 'Day']], index_col=0, date_parser=parse, keep_date_col=True)
 
 # print(dataset.columns.values.tolist())
-dataset = dataset[['MaxLoad', 'max_temp', 'min_temp', 'weekday']]  ### ,'Month'
+dataset = dataset[['MaxLoad']]  ### , 'max_temp', 'min_temp', 'weekday','Month'
 dataset['MaxLoad'] = dataset['MaxLoad'] / 1000
 print(dataset.columns.values.tolist())
 #
